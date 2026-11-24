@@ -1,0 +1,242 @@
+name: WSAS Reusable Security Audit
+
+on:
+  workflow_call:
+    inputs:
+      enable_codeql:
+        description: "Run GitHub CodeQL (recommended for public repos or repos with GitHub Code Security)"
+        required: false
+        type: boolean
+        default: false
+      enable_semgrep:
+        description: "Run Semgrep Community Edition SAST"
+        required: false
+        type: boolean
+        default: true
+      enable_zap_baseline:
+        description: "Run passive OWASP ZAP baseline scan against staging_url (NEVER active scan on production)"
+        required: false
+        type: boolean
+        default: false
+      staging_url:
+        description: "Authorized staging/test URL for passive OWASP ZAP baseline scan"
+        required: false
+        type: string
+        default: ""
+      fail_on_severity:
+        description: "Release gate failure threshold (none, critical, high, medium)"
+        required: false
+        type: string
+        default: "high"
+      hub_repository:
+        description: "Security Hub repository hosting WSAS scripts"
+        required: false
+        type: string
+        default: "wyu-dev/wahyu-web-security-hub"
+      hub_ref:
+        description: "Verified commit SHA or tag of the Security Hub to pull WSAS scripts from"
+        required: false
+        type: string
+        default: "main"
+
+permissions:
+  contents: read
+
+jobs:
+  secret-scan:
+    name: Secret Detection (Gitleaks)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout target repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks secret scanner
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+
+  dependency-audit:
+    name: Dependency Audit (npm / Composer)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout target repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Detect dependency lockfiles
+        id: detect
+        shell: bash
+        run: |
+          [ -f package-lock.json ] && echo "npm=true" >> "$GITHUB_OUTPUT" || echo "npm=false" >> "$GITHUB_OUTPUT"
+          [ -f composer.lock ] && echo "composer=true" >> "$GITHUB_OUTPUT" || echo "composer=false" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Node.js
+        if: steps.detect.outputs.npm == 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+
+      - name: Run npm audit
+        if: steps.detect.outputs.npm == 'true'
+        shell: bash
+        run: |
+          mkdir -p wsas-ci-artifacts
+          npm ci --ignore-scripts
+          npm audit --json > wsas-ci-artifacts/npm-audit.json || true
+          npm audit --audit-level=high
+
+      - name: Run composer audit
+        if: steps.detect.outputs.composer == 'true'
+        shell: bash
+        run: |
+          mkdir -p wsas-ci-artifacts
+          if command -v composer >/dev/null 2>&1; then
+            composer audit --format=json > wsas-ci-artifacts/composer-audit.json || true
+            composer audit
+          else
+            echo "composer not available on runner"
+          fi
+
+      - name: Upload dependency audit reports
+        if: always() && (steps.detect.outputs.npm == 'true' || steps.detect.outputs.composer == 'true')
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: wsas-dependency-audit
+          path: wsas-ci-artifacts/
+          if-no-files-found: ignore
+
+  semgrep-sast:
+    name: SAST (Semgrep Community)
+    if: ${{ inputs.enable_semgrep }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout target repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+
+      - name: Run Semgrep scan
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip semgrep
+          mkdir -p wsas-ci-artifacts
+          semgrep scan --config auto --json --json-output=wsas-ci-artifacts/semgrep.json . || true
+          semgrep scan --config auto --severity ERROR --error .
+
+      - name: Upload Semgrep report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: wsas-semgrep-report
+          path: wsas-ci-artifacts/semgrep.json
+          if-no-files-found: ignore
+
+  codeql-analysis:
+    name: SAST (GitHub CodeQL)
+    if: ${{ inputs.enable_codeql }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout target repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@38112626f97ac1fd7acf3df7ebca51f4677c1b38 # codeql-bundle-v2.27.6
+        with:
+          languages: javascript-typescript
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@38112626f97ac1fd7acf3df7ebca51f4677c1b38 # codeql-bundle-v2.27.6
+
+  zap-baseline-dast:
+    name: Passive DAST (OWASP ZAP Baseline — Staging Only)
+    if: ${{ inputs.enable_zap_baseline && inputs.staging_url != '' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Run passive OWASP ZAP Baseline Scan
+        uses: zaproxy/action-baseline@de8ad967d3548d44ef623df22cf95c3b0baf8b25 # v0.15.0
+        with:
+          target: ${{ inputs.staging_url }}
+          fail_action: false
+          allow_issue_writing: false
+          artifact_name: wsas-zap-baseline-report
+
+  wsas-profile-audit-and-gate:
+    name: WSAS Stack Audit & Release Gate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout target repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: target-repo
+
+      - name: Checkout WSAS Security Hub scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ inputs.hub_repository }}
+          ref: ${{ inputs.hub_ref }}
+          path: wsas-hub
+
+      - name: Setup Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+
+      - name: Detect stack, run WSAS checks, and enforce release gate
+        shell: bash
+        run: |
+          mkdir -p wsas-out
+          python wsas-hub/scripts/detect-stack.py target-repo --output wsas-out/stack.json
+          PROFILES=$(python -c "import json; d=json.load(open('wsas-out/stack.json')); print(','.join(d['profiles']))")
+          python wsas-hub/scripts/static-checks.py target-repo --profiles "$PROFILES" --output wsas-out/static.json
+
+          cat <<EOF > wsas-out/tools-status.json
+          [
+            {"name": "wsas-static-checks", "status": "executed", "notes": "Profiles: ${PROFILES}"},
+            {"name": "gitleaks", "status": "executed", "notes": "Executed in parallel secret-scan job"},
+            {"name": "semgrep", "status": "${{ inputs.enable_semgrep && 'executed' || 'skipped_not_applicable' }}", "notes": "Controlled by enable_semgrep input"},
+            {"name": "codeql", "status": "${{ inputs.enable_codeql && 'executed' || 'skipped_not_applicable' }}", "notes": "Controlled by enable_codeql input"},
+            {"name": "owasp-zap-baseline", "status": "${{ (inputs.enable_zap_baseline && inputs.staging_url != '') && 'executed' || 'skipped_not_applicable' }}", "notes": "Passive staging-only DAST"}
+          ]
+          EOF
+
+          set +e
+          python wsas-hub/scripts/generate-report.py \
+            --stack wsas-out/stack.json \
+            --static wsas-out/static.json \
+            --tools-status wsas-out/tools-status.json \
+            --mode github-actions \
+            --out-md wsas-out/wsas-audit-report.md \
+            --out-json wsas-out/wsas-audit-report.json \
+            --fail-on "${{ inputs.fail_on_severity }}"
+          GATE_CODE=$?
+          set -e
+
+          cat wsas-out/wsas-audit-report.md >> "$GITHUB_STEP_SUMMARY"
+          exit $GATE_CODE
+
+      - name: Upload WSAS Audit Report (Markdown + JSON)
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: wsas-audit-report
+          path: |
+            wsas-out/wsas-audit-report.md
+            wsas-out/wsas-audit-report.json

@@ -1,0 +1,53 @@
+id: php-laravel
+name: PHP / Laravel
+version: "1.0.0"
+description: >-
+  Security audit profile for PHP and Laravel web applications.
+  Checks .env exposure, APP_DEBUG, raw SQL injection, Blade unescaped output, CSRF, and mass assignment.
+
+detection:
+  any_files:
+    - "artisan"
+    - "composer.json"
+    - "index.php"
+    - "*.php"
+
+scanners:
+  secret_scan: true
+  static_checks: true
+  semgrep_configs:
+    - "p/php"
+    - "p/owasp-top-ten"
+  npm_audit: optional
+  composer_audit: true
+  dast_passive_zap: optional
+
+checks:
+  - id: PHP-ENV-001
+    title: Committed .env file or APP_KEY / DB_PASSWORD in repository
+    severity: Critical
+    cwe: CWE-798
+  - id: PHP-DEBUG-001
+    title: APP_DEBUG=true configured in production/example deployment config
+    severity: High
+    cwe: CWE-215
+  - id: PHP-SQLI-001
+    title: Unparameterized SQL via DB::raw(), whereRaw(), or concatenated PHP SQL queries
+    severity: High
+    cwe: CWE-89
+  - id: PHP-XSS-001
+    title: Unescaped Blade output ({!! ... !!}) or raw echo of user input ($_GET/$_POST/$_REQUEST)
+    severity: Medium
+    cwe: CWE-79
+  - id: PHP-MASS-001
+    title: Unguarded Eloquent model ($guarded = []) or request->all() passed directly to create/update
+    severity: Medium
+    cwe: CWE-915
+  - id: PHP-CSRF-001
+    title: Disabled CSRF verification on state-changing web routes
+    severity: High
+    cwe: CWE-352
+  - id: PHP-DEPS-001
+    title: Vulnerable Composer dependencies reported by composer audit
+    severity: High
+    cwe: CWE-1395

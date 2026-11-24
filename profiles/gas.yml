@@ -1,0 +1,43 @@
+id: gas
+name: Google Apps Script (GAS)
+version: "1.0.0"
+description: >-
+  Security audit profile for Google Apps Script Web Apps and Workspace add-ons.
+  Checks deployment access permissions, HtmlService escaping, PropertiesService usage, and OAuth scopes.
+
+detection:
+  any_files:
+    - "appsscript.json"
+    - ".clasp.json"
+    - "*.gs"
+
+scanners:
+  secret_scan: true
+  static_checks: true
+  semgrep_configs:
+    - "p/javascript"
+  npm_audit: false
+  composer_audit: false
+  dast_passive_zap: optional
+
+checks:
+  - id: GAS-PERM-001
+    title: Web App deployed as USER_DEPLOYING with ANYONE_ANONYMOUS access (runs with developer privileges for unauthenticated users)
+    severity: High
+    cwe: CWE-250
+  - id: GAS-XSS-001
+    title: Unescaped force-printing scriptlet (<?!= ... ?>) or HtmlService output with untrusted user parameters
+    severity: Medium
+    cwe: CWE-79
+  - id: GAS-SECRET-001
+    title: Hardcoded API keys, Spreadsheet IDs with sensitive data, or tokens instead of PropertiesService
+    severity: High
+    cwe: CWE-798
+  - id: GAS-SCOPE-001
+    title: Overly broad OAuth scopes in appsscript.json (e.g. full drive/mail access when narrower scope suffices)
+    severity: Medium
+    cwe: CWE-250
+  - id: GAS-AUTH-001
+    title: doGet/doPost handlers performing state changes without session/user authorization checks
+    severity: High
+    cwe: CWE-862

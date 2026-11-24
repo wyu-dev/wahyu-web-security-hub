@@ -1,0 +1,23 @@
+# Environment & secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+serviceAccountKey*.json
+*firebase-adminsdk*.json
+
+# Temporary audit directories (keep reports/example-audit-report.md tracked)
+reports/.tmp-*
+reports/*-audit-*.md
+reports/*-audit-*.json
+!reports/example-audit-report.md
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# OS
+.DS_Store
+Thumbs.db

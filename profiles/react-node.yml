@@ -1,0 +1,57 @@
+id: react-node
+name: React / Vite / Node.js
+version: "1.0.0"
+description: >-
+  Security audit profile for React, Vite, and Node.js applications.
+  Covers dependency vulnerabilities, client/server env boundary leaks, XSS, and API hardening.
+
+detection:
+  any_files:
+    - "package.json"
+  optional_indicators:
+    - "vite.config.js"
+    - "vite.config.ts"
+    - "next.config.js"
+    - "next.config.mjs"
+    - "server.js"
+    - "app.js"
+
+scanners:
+  secret_scan: true
+  static_checks: true
+  semgrep_configs:
+    - "p/javascript"
+    - "p/react"
+    - "p/nodejs"
+    - "p/owasp-top-ten"
+  npm_audit: true
+  composer_audit: false
+  codeql_languages:
+    - "javascript-typescript"
+  dast_passive_zap: optional
+
+checks:
+  - id: REACT-XSS-001
+    title: Use of dangerouslySetInnerHTML without verified sanitization (e.g. DOMPurify)
+    severity: Medium
+    cwe: CWE-79
+  - id: VITE-ENV-001
+    title: Sensitive secrets exposed via VITE_ or NEXT_PUBLIC_ client environment variables
+    severity: Critical
+    cwe: CWE-200
+  - id: NODE-CORS-001
+    title: Overly permissive CORS configuration (origin '*' with credentials true)
+    severity: High
+    cwe: CWE-942
+  - id: NODE-DEPS-001
+    title: High or Critical vulnerable npm dependencies
+    severity: High
+    cwe: CWE-1395
+  - id: NODE-EVAL-001
+    title: Dynamic code execution via eval() or new Function()
+    severity: High
+    cwe: CWE-95
+  - id: NODE-PROTO-001
+    title: Missing input validation or helmet/rate-limit middleware on Express/Node APIs
+    severity: Medium
+    cwe: CWE-20

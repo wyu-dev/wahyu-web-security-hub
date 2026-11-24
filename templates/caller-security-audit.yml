@@ -1,0 +1,39 @@
+# Copy this file to .github/workflows/security-audit.yml in any target repository
+# (e.g., Portal LI, Sistem SPPA, Bintang Bijak, Sistem Aduan, Aplikasi Matematik).
+#
+# IMPORTANT: Replace <OWNER> and <COMMIT_SHA> with your GitHub username/org and
+# the verified 40-character commit SHA from wahyu-web-security-hub (never rely on a mutable tag/branch).
+
+name: Web Security Audit
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      staging_url:
+        description: "Optional authorized staging URL for passive OWASP ZAP baseline scan (NEVER production without authorization)"
+        required: false
+        default: ""
+  schedule:
+    - cron: "0 2 * * 1" # Every Monday 02:00 UTC
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  wsas-audit:
+    name: WSAS Reusable Security Audit
+    # Pin to an immutable 40-char commit SHA of wahyu-web-security-hub once pushed:
+    # uses: wyu-dev/wahyu-web-security-hub/.github/workflows/reusable-audit.yml@<40-CHAR-COMMIT-SHA> # v1.0.0
+    uses: wyu-dev/wahyu-web-security-hub/.github/workflows/reusable-audit.yml@REPLACE_WITH_VERIFIED_COMMIT_SHA # v1.0.0
+    with:
+      enable_codeql: false # Set true for public repos or repos with GitHub Code Security enabled
+      enable_semgrep: true
+      enable_zap_baseline: false # Set true ONLY with an authorized staging_url
+      staging_url: ${{ inputs.staging_url }}
+      fail_on_severity: high
+    secrets: inherit

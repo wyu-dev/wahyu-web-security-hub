@@ -1,0 +1,56 @@
+id: firebase
+name: Firebase (Firestore, Realtime DB, Storage, Auth, Functions)
+version: "1.0.0"
+description: >-
+  Security audit profile for Firebase applications. Distinguishes public web client
+  Firebase API keys (not secret by themselves) from critical service account private keys
+  and overly permissive Security Rules.
+
+detection:
+  any_files:
+    - "firebase.json"
+    - "firestore.rules"
+    - "storage.rules"
+    - "database.rules.json"
+    - ".firebaserc"
+  package_dependencies:
+    - "firebase"
+    - "firebase-admin"
+    - "firebase-functions"
+
+scanners:
+  secret_scan: true
+  static_checks: true
+  semgrep_configs:
+    - "p/javascript"
+    - "p/typescript"
+  npm_audit: true
+  composer_audit: false
+  dast_passive_zap: optional
+
+checks:
+  - id: FB-RULES-001
+    title: Open Firestore or Storage rules allowing unrestricted read/write (allow read, write: if true)
+    severity: Critical
+    cwe: CWE-284
+  - id: FB-RULES-002
+    title: Overly broad Firestore rules checking only request.auth != null without ownership or role validation
+    severity: High
+    cwe: CWE-863
+  - id: FB-RTDB-001
+    title: Realtime Database rules set to ".read": true or ".write": true
+    severity: Critical
+    cwe: CWE-284
+  - id: FB-SA-001
+    title: Exposed Firebase Admin SDK service account private key JSON in repository
+    severity: Critical
+    cwe: CWE-798
+  - id: FB-AUTH-001
+    title: Client-side role/admin checks without server-side Custom Claims or Security Rules enforcement
+    severity: High
+    cwe: CWE-602
+
+notes:
+  - Firebase web apiKey in client config is public by design (Info only unless paired with unrestricted APIs or open rules).
+  - Never expose serviceAccountKey.json or private_key PEM blocks.
+  - Validate rules locally with Firebase Emulator Suite before deploying.

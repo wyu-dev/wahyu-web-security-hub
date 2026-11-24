@@ -1,0 +1,46 @@
+id: supabase
+name: Supabase (PostgreSQL, RLS, Auth, Edge Functions)
+version: "1.0.0"
+description: >-
+  Security audit profile for Supabase applications. Enforces Row Level Security (RLS)
+  verification and strict protection of service_role keys.
+
+detection:
+  any_files:
+    - "supabase/config.toml"
+    - "supabase/migrations/*.sql"
+  package_dependencies:
+    - "@supabase/supabase-js"
+    - "@supabase/ssr"
+
+scanners:
+  secret_scan: true
+  static_checks: true
+  semgrep_configs:
+    - "p/javascript"
+    - "p/typescript"
+  npm_audit: true
+  composer_audit: false
+  dast_passive_zap: optional
+
+checks:
+  - id: SUPA-KEY-001
+    title: Supabase service_role key exposed in client-side code or public env vars (VITE_/NEXT_PUBLIC_)
+    severity: Critical
+    cwe: CWE-798
+  - id: SUPA-RLS-001
+    title: SQL migrations creating tables in public schema without ENABLE ROW LEVEL SECURITY
+    severity: High
+    cwe: CWE-284
+  - id: SUPA-RLS-002
+    title: Permissive RLS policy using USING (true) or WITH CHECK (true) on write operations
+    severity: High
+    cwe: CWE-863
+  - id: SUPA-FUNC-001
+    title: Supabase Edge Functions missing JWT/authorization validation
+    severity: High
+    cwe: CWE-306
+
+notes:
+  - The Supabase anon key is intended for browser use ONLY when strict PostgreSQL RLS policies are enabled on every exposed table.
+  - The service_role key bypasses RLS completely and must NEVER appear in frontend code or git history.
